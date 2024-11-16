@@ -56,7 +56,7 @@ from io import StringIO
 from flask import Flask, request, render_template
 import pandas as pd
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.')
 
 @app.route('/', methods=['GET', 'POST'])
 def home():
