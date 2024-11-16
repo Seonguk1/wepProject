@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>대화 로그 분석기</title>
+
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+</head>
+<body>
+    <div class="container">
+        <h1>대화 로그 분석기</h1><br>
+        <div class="results">
+            <h2>분석 결과</h2>
+            <button type="submit" onclick="totalNumSpoken()">총 말한 횟수</button>
+            <button type="submit" onclick="NumWordSpoken()">특정 단어 말한 횟수</button>
+            <pre>분석 결과가 여기에 표시됩니다.
+                
+                    <!-- {% for chat in chat_data %}
+                        
+                            <strong>사용자:</strong> {{ chat[0] }} <br>
+                            <strong>시간:</strong> {{ chat[1] }} {{ chat[2] }} <br>
+                            <strong>메시지:</strong> {{ chat[3] }}
+                        
+                    {% endfor %} -->
+
+
+                    
+                
+            </pre>
+            <!-- <div id="resultDisplay">
+                
+            </div> -->
+            <div>
+                <canvas id="myChart"></canvas>
+            </div>
+            
+        </div>
+    </div>
+
+
+    <script>
+        // 레이터차트 데이터
+        const data = {
+        labels: [
+            'Eating',
+            'working',
+            'Running',
+            'Studying',
+            'Teaching'
+        ],
+        datasets: [{
+            label: '대화 로그 분석',
+            data: [65, 59, 90, 81, 76],
+            fill: true,
+            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+            borderColor: 'rgb(255, 99, 132)',
+            pointBackgroundColor: 'rgb(255, 99, 132)',
+            pointBorderColor: '#fff',
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: 'rgb(255, 99, 132)'
+        }]
+        };
+
+        //레이더차트 configuration
+        const config = { 
+        type: 'radar',
+        data: data,
+        options: {
+            legend:{
+                label: {
+                    fontColor: "red",
+                    fontSize: 10
+                }
+            },
+            elements: {
+            line: {
+                borderWidth: 3
+            }
+            }
+        },
+        };
+
+        const myChart = new Chart(
+            document.getElementById('myChart'),
+            config
+        );
+    </script>
+</body>
+</html>

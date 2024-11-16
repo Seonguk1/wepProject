@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>대화 로그 분석기</title>
+
+  <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+  
+</head>
+<body>
+  <div class="container">
+    <h1>대화 로그 분석기</h1>
+
+    <form class="upload-section" action="/" method="post" enctype="multipart/form-data">
+      <input name="name" placeholder="테스트할 사용자 이름"><br><br>
+      <label for="file-upload" class="custom-file-upload">
+          대화 로그 파일 업로드
+      </label>
+
+      <input id="file-upload" name="file" type="file" accept=".txt">
+      <button type="submit">업로드</button>
+  </form>
+  
+    <div class="file-info" id="file-info"></div>
+  </div>
+</body>
+</html>
