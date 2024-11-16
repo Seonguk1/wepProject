@@ -61,7 +61,7 @@ app = Flask(__name__)
 @app.route('/', methods=['GET', 'POST'])
 def home():
     if request.method == 'GET':
-        return render_template("main.html")
+        return render_template("index.html")
     elif request.method == 'POST':
         # 파일이 업로드되었는지 확인
         if 'file' not in request.files:
