@@ -30,31 +30,76 @@
 
                     
                 
-            </pre>
+            
             <!-- <div id="resultDisplay">
                 
             </div> -->
             <div>
+                <canvas id="myBarChart"></canvas>
+            </div>
+            <div>
                 <canvas id="myChart"></canvas>
             </div>
+            </pre>
             
         </div>
     </div>
-
-
+    <!-- 막대그래프 데이터 -->
     <script>
-        // 레이터차트 데이터
+        const timeSlot = {{ time_slot | tojson }};
+        const labels = new Array(23)
+        for(let i=0;i<24;i++){
+            labels[i]=i
+        }
+        const myBarChart = new Chart(document.getElementById('myBarChart'), {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: timeSlot,
+                    label: '시간대별 대화량',
+                    // backgroundColor: [
+                    //     'rgba(255, 99, 132, 0.2)',
+                    //     'rgba(54, 162, 235, 0.2)',
+                    //     'rgba(255, 206, 86, 0.2)',
+                    //     'rgba(75, 192, 192, 0.2)',
+                    //     'rgba(153, 102, 255, 0.2)',
+                    //     'rgba(255, 159, 64, 0.2)'
+                    // ],
+                    // borderColor: [
+                    //     'rgba(255, 99, 132, 1)',
+                    //     'rgba(54, 162, 235, 1)',
+                    //     'rgba(255, 206, 86, 1)',
+                    //     'rgba(75, 192, 192, 1)',
+                    //     'rgba(153, 102, 255, 1)',
+                    //     'rgba(255, 159, 64, 1)'
+                    // ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    </script>
+
+    <!-- 레이터차트 데이터 -->
+    <script>
         const data = {
         labels: [
-            'Eating',
-            'working',
-            'Running',
+            '대화량',
+            '감정 분석',
+            '답장 속도',
             'Studying',
             'Teaching'
         ],
         datasets: [{
             label: '대화 로그 분석',
-            data: [65, 59, 90, 81, 76],
+            data: [10, 50, {{response_time_score}}, 50, 50],
             fill: true,
             backgroundColor: 'rgba(255, 99, 132, 0.2)',
             borderColor: 'rgb(255, 99, 132)',
