@@ -14,3 +14,8 @@ build/
 *.egg-info/
 
 test.html
+test.py
+
+*.txt
+
+*.pkl

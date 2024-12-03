@@ -1,8 +1,19 @@
 from flask import Flask, request, render_template
 import pandas as pd
-from konlpy.tag import Okt
 from datetime import datetime
 from collections import defaultdict
+from pykospacing import Spacing
+from hanspell import spell_checker
+from konlpy.tag import Okt
+from ckonlpy.tag import Twitter
+import urllib.request
+from soynlp import DoublespaceLineCorpus
+from soynlp.word import WordExtractor
+from soynlp.normalizer import *
+from soynlp.tokenizer import MaxScoreTokenizer
+from concurrent.futures import ProcessPoolExecutor  
+import os
+import pickle # 객체를 직렬화하여 저장
 twt = Okt()
 
 app = Flask(__name__, template_folder='.')
@@ -28,6 +39,20 @@ def process_file(file):
     df = pd.DataFrame(data, columns=[f'col{i+1}' for i in range(max_fields)])
     return df
 
+def process_message(message, word_score_table, stop_words):
+    
+    scores = {word: score.cohesion_forward for word, score in word_score_table.items()}
+    maxscore_tokenizer = MaxScoreTokenizer(scores=scores)
+    
+    # 메시지 토큰화 및 명사 추출
+    tokenized_message = maxscore_tokenizer.tokenize(message)
+    words = []
+    for tokens in tokenized_message:
+        for word in tokens:
+            if len(word) > 1 and word not in stop_words:  # 1글자 제외, 불용어 제외
+                words.append(word)
+    return words
+
 # 사용자별 채팅 데이터 분리 함수
 def extract_chat_data(df):
     from collections import defaultdict
@@ -39,66 +64,106 @@ def extract_chat_data(df):
     user_sentiments = defaultdict(lambda: {'positive': 0, 'negative': 0})  # 긍정/부정 단어 빈도 저장
 
     all_word = []
-    stop_words = ['그리고', '이것', '그것', '저것','이거','그거','저거','이모티콘','이제','사진', '혹시', '이번', '저번',
+    stop_words = ['그리고', '이것', '그것', '저것','이거','그거','저거','이제', '혹시', '이번', '저번',
                    '보통', '먼저', '오늘', '내일', '어제', '오전', '오후', '잠깐', '일찍', '정도', '이제', '다시', '바로', '대신', '거의', '어디','']
     positive_words = ['좋다', '훌륭', '기쁘다', '멋지다', '사랑', '행복']  # 추가 가능
     negative_words = ['나쁘다', '싫다', '짜증', '슬프다', '화난다', '불행']  # 추가 가능
 
-    for _, row in df.iterrows():
-        user = row.iloc[0]  # 첫 번째 열: 사용자 이름
-        am_pm = row.iloc[1]  # 두 번째 열: 오전/오후
-        time = row.iloc[2]  # 세 번째 열: 시간
-        message = ' '.join(map(str, row[3:])).strip()  # 나머지 열: 메시지 내용
+    urllib.request.urlretrieve("https://raw.githubusercontent.com/lovit/soynlp/master/tutorials/2016-10-20.txt", filename="2016-10-20.txt")
+    corpus = DoublespaceLineCorpus("2016-10-20.txt")
 
-        # 형식 확인
-        if not (user.startswith('[') and user.endswith(']')):
-            continue
-        if not (am_pm.startswith('[') and time.endswith(']')):
-            continue
+    # 훈련된 모델이 있는지 확인하고, 있으면 로드하고 없으면 새로 훈련
+    if os.path.exists('word_score_table.pkl'):
+        with open('word_score_table.pkl', 'rb') as f:
+            word_score_table = pickle.load(f)
+        print("훈련된 결과를 불러왔습니다.")
+    else:
+        print("훈련된 결과가 없어서 새로 훈련을 시작합니다.")
+        word_extractor = WordExtractor()
+        word_extractor.train(corpus)
+        word_score_table = word_extractor.extract()
+        with open('word_score_table.pkl', 'wb') as f:
+            pickle.dump(word_score_table, f)
+        print("훈련이 완료되었습니다.")
 
-        user = user[1:-1]
-        am_pm = am_pm[1:]
-        time = time[:-1]
+    ## Process chat messages in parallel for efficiency
+    with ProcessPoolExecutor() as executor:
+        futures = []
+        for _, row in df.iterrows():
+            user = row.iloc[0]  # 첫 번째 열: 사용자 이름
+            am_pm = row.iloc[1]  # 두 번째 열: 오전/오후
+            time = row.iloc[2]  # 세 번째 열: 시간
+            message = ' '.join(map(str, row[3:])).strip()  # 메시지 내용
 
-        # 시간 변환
-        hour, minute = map(int, time.split(':'))
-        if am_pm == '오후':
-            hour = (hour % 12) + 12
-        elif hour == 12:
-            hour = 0
-        formatted_time = f"{hour:02}:{minute:02}"
+            # 형식 확인
+            if not (user.startswith('[') and user.endswith(']')):
+                continue
+            if not (am_pm.startswith('[') and time.endswith(']')):
+                continue
 
-        
-        # 사용자별 채팅 데이터 저장
-        if user not in chat_data:
-            chat_data[user] = []
-        chat_data[user].append([formatted_time, message])
+            user = user[1:-1]
+            am_pm = am_pm[1:]
+            time = time[:-1]
+
+            # 시간 변환
+            hour, minute = map(int, time.split(':'))
+            if am_pm == '오후':
+                hour = (hour % 12) + 12
+            elif hour == 12:
+                hour = 0
+            formatted_time = f"{hour:02}:{minute:02}"
+
+            ## 채팅 메시지 전처리
+    
+            # 반복되는 문자 정제
+            message = emoticon_normalize(message, num_repeats=2)
+
+            # 맞춤법 검사
+            message = spell_checker.check(message)
+            message = message.checked
+
+            # 띄어쓰기 검사
+            spacing = Spacing()
+            message = spacing(message)
+
+            futures.append(executor.submit(process_message, message, word_score_table, stop_words))
+
+        # Wait for all futures to complete and collect results
+        for future in futures:
+            words = future.result()
+            print(words)
+            all_word.extend(words)
+
+    # 사용자별 단어 리스트 생성
+    for word in all_word:
+        # 사용자별로 단어 저장
+        user_words[user].append(word)
 
         # 채팅 로그 순서대로 데이터 저장
         log_data.append([user, formatted_time, message])
 
-        # 메시지에서 명사 추출 및 분석
-        words = twt.pos(message)
-        for i, j in words:
-            if j == 'Noun' and len(i) > 1 and i not in stop_words:  # 1글자 제외, 불용어 제외
-                all_word.append(i)
-                user_words[user].append(i)
-            
-            # 긍정/부정 단어 빈도 체크
-            if i in positive_words:
-                user_sentiments[user]['positive'] += 1
-            elif i in negative_words:
-                user_sentiments[user]['negative'] += 1
+
+        # ## 메시지에서 명사 추출 및 분석
+
+        # # 학습에 기반한 단어 토큰화
+        # tokenized_message = maxscore_tokenizer.tokenize(message)
+        # for words in tokenized_message:
+        #     print(words)
+        #     word = twt.pos(words)    
+        #     for i, j in word:
+        #         if j == 'Noun' and len(i) > 1: # and i not in stop_words:  # 1글자 제외, 불용어 제외
+        #             all_word.append(i)
+        #             user_words[user].append(i)
 
     # 모든 단어의 빈도 데이터프레임 생성
     all_word_df = pd.DataFrame({'words': all_word, 'count': len(all_word) * [1]})
     all_word_df = all_word_df.groupby('words').count()
     print(all_word_df.sort_values('count', ascending=False))
 
-    # 사용자별 긍정/부정 점수 출력
-    print("\nUser Sentiment Scores:")
-    for user, sentiments in user_sentiments.items():
-        print(f"{user}: {sentiments}")
+    # # 사용자별 긍정/부정 점수 출력
+    # print("\nUser Sentiment Scores:")
+    # for user, sentiments in user_sentiments.items():
+    #     print(f"{user}: {sentiments}")
 
     # 사용자별 단어 리스트 확인
     #print("\nUser-specific Words:")
