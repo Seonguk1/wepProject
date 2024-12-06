@@ -35,47 +35,69 @@
                 
             </div> -->
             <div>
+                <canvas id="dailyChart"></canvas>
+            </div>
+            <div>
                 <canvas id="myBarChart"></canvas>
             </div>
             <div>
-                <canvas id="myChart"></canvas>
+                <!-- <canvas id="myChart"></canvas> -->
             </div>
             </pre>
             
         </div>
     </div>
+
+    <script>
+        const dailyChart = new Chart(document.getElementById('dailyChart'), {
+            type: 'bar',    
+            data: {
+                labels: {{daily_chat_volume_date | tojson}},
+                datasets: [
+                    {
+                        label: '최근 30일 일별 대화량',
+                        data: {{daily_chat_volume_count}},
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)', // 사용자 1의 색상
+                        borderColor: 'rgba(75, 192, 192, 1)', // 사용자 1의 경계선 색상
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    y: {
+                        // beginAtZero: true
+                    }
+                }
+            }
+        });
+    </script>
     <!-- 막대그래프 데이터 -->
     <script>
-        const timeSlot = {{ time_slot | tojson }};
-        const labels = new Array(23)
-        for(let i=0;i<24;i++){
-            labels[i]=i
+        const labels = [];
+        for (let i = 0; i < 24; i++) {
+            labels.push(i + '시');
         }
         const myBarChart = new Chart(document.getElementById('myBarChart'), {
-            type: 'bar',
+            type: 'bar',    
             data: {
                 labels: labels,
-                datasets: [{
-                    data: timeSlot,
-                    label: '시간대별 대화량',
-                    // backgroundColor: [
-                    //     'rgba(255, 99, 132, 0.2)',
-                    //     'rgba(54, 162, 235, 0.2)',
-                    //     'rgba(255, 206, 86, 0.2)',
-                    //     'rgba(75, 192, 192, 0.2)',
-                    //     'rgba(153, 102, 255, 0.2)',
-                    //     'rgba(255, 159, 64, 0.2)'
-                    // ],
-                    // borderColor: [
-                    //     'rgba(255, 99, 132, 1)',
-                    //     'rgba(54, 162, 235, 1)',
-                    //     'rgba(255, 206, 86, 1)',
-                    //     'rgba(75, 192, 192, 1)',
-                    //     'rgba(153, 102, 255, 1)',
-                    //     'rgba(255, 159, 64, 1)'
-                    // ],
-                    borderWidth: 1
-                }]
+                datasets: [
+                    {
+                        label: '{{user1_name}}',
+                        data: {{user1_time_slots}},
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)', // 사용자 1의 색상
+                        borderColor: 'rgba(75, 192, 192, 1)', // 사용자 1의 경계선 색상
+                        borderWidth: 1
+                    },
+                    {
+                        label: '{{user2_name}}',
+                        data: {{user2_time_slots}},
+                        backgroundColor: 'rgba(153, 102, 255, 0.2)', // 사용자 2의 색상
+                        borderColor: 'rgba(153, 102, 255, 1)', // 사용자 2의 경계선 색상
+                        borderWidth: 1
+                    }
+                ]
             },
             options: {
                 scales: {
@@ -130,7 +152,7 @@
         };
 
         const myChart = new Chart(
-            document.getElementById('myChart'),
+            // document.getElementById('myChart'),
             config
         );
     </script>

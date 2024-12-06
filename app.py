@@ -4,40 +4,52 @@ from datetime import datetime
 from collections import defaultdict
 from pykospacing import Spacing
 from hanspell import spell_checker
-from konlpy.tag import Okt
+from konlpy.tag import Okt  
 from ckonlpy.tag import Twitter
 import urllib.request
 from soynlp import DoublespaceLineCorpus
 from soynlp.word import WordExtractor
 from soynlp.normalizer import *
 from soynlp.tokenizer import MaxScoreTokenizer
-from concurrent.futures import ProcessPoolExecutor  
+from concurrent.futures import ThreadPoolExecutor  
+import re
 import os
 import pickle # 객체를 직렬화하여 저장
 twt = Okt()
 
-app = Flask(__name__, template_folder='.')
 
 # 파일 처리 함수
 def process_file(file):
-    content = file.read().decode('utf-8')
-    lines = content.strip().split('\n')
+    chunk_size = 1000  # 한 번에 읽을 줄 수
+    chunk_list = []  # 모든 청크를 저장할 리스트
+
+    for chunk in pd.read_csv(file, chunksize=chunk_size, encoding='utf-8', delimiter='\t'):
+        # 각 청크 처리 (여기서 chunk는 pandas DataFrame)
+        # 예를 들어, 각 청크를 전처리하는 로직을 여기에 추가
+        processed_chunk = process_chunk(chunk)
+        
+        # 처리된 청크를 리스트에 추가
+        chunk_list.append(processed_chunk)
+
+    # 모든 청크가 처리된 후 합치기
+    df = pd.concat(chunk_list, ignore_index=True)
+    return df
+
+# 청크 처리 함수
+def process_chunk(chunk):
+    # 각 청크에서 필요한 전처리 작업을 수행
+    # 예를 들어, 공백을 기준으로 분할하는 등의 작업
     data = []
-
-    max_fields = 0  # 최대 필드 개수를 찾기 위한 초기값
-
-    for line in lines:
-        fields = line.split()  # 공백 기준 분할
-        max_fields = max(max_fields, len(fields))
+    for _, row in chunk.iterrows():
+        fields = row.iloc[0].split()  # 공백 기준 분할
         data.append(fields)
 
-    # 모든 행의 필드 수를 최대 필드 개수에 맞춤
+    # DataFrame으로 변환 후 반환
+    max_fields = max(len(fields) for fields in data)
     for fields in data:
         fields.extend([''] * (max_fields - len(fields)))
-
-    # DataFrame 변환
-    df = pd.DataFrame(data, columns=[f'col{i+1}' for i in range(max_fields)])
-    return df
+    
+    return pd.DataFrame(data)
 
 def process_message(message, word_score_table, stop_words):
     
@@ -47,13 +59,15 @@ def process_message(message, word_score_table, stop_words):
     # 메시지 토큰화 및 명사 추출
     tokenized_message = maxscore_tokenizer.tokenize(message)
     words = []
-    for tokens in tokenized_message:
-        for word in tokens:
-            if len(word) > 1 and word not in stop_words:  # 1글자 제외, 불용어 제외
+    for tokens in tokenized_message:    
+        tokens = twt.pos(tokens)
+        for word, j in tokens:
+            if j=='Noun' and len(word) > 1 and word not in stop_words:  # 1글자 제외, 불용어 제외
                 words.append(word)
+    print("Processed words:", words)
     return words
 
-# 사용자별 채팅 데이터 분리 함수
+# 사용자별 채팅 데이터 분리 함수    
 def extract_chat_data(df):
     from collections import defaultdict
     
@@ -64,8 +78,8 @@ def extract_chat_data(df):
     user_sentiments = defaultdict(lambda: {'positive': 0, 'negative': 0})  # 긍정/부정 단어 빈도 저장
 
     all_word = []
-    stop_words = ['그리고', '이것', '그것', '저것','이거','그거','저거','이제', '혹시', '이번', '저번',
-                   '보통', '먼저', '오늘', '내일', '어제', '오전', '오후', '잠깐', '일찍', '정도', '이제', '다시', '바로', '대신', '거의', '어디','']
+    stop_words = set(['그리고', '이것', '그것', '저것','이거','그거','저거','이제', '혹시', '이번', '저번',
+                '보통', '먼저', '오늘', '내일', '어제', '오전', '오후', '잠깐', '일찍', '정도', '이제', '다시', '바로', '대신', '거의', '어디'])
     positive_words = ['좋다', '훌륭', '기쁘다', '멋지다', '사랑', '행복']  # 추가 가능
     negative_words = ['나쁘다', '싫다', '짜증', '슬프다', '화난다', '불행']  # 추가 가능
 
@@ -84,10 +98,10 @@ def extract_chat_data(df):
         word_score_table = word_extractor.extract()
         with open('word_score_table.pkl', 'wb') as f:
             pickle.dump(word_score_table, f)
-        print("훈련이 완료되었습니다.")
+        print("훈련이 완료되었습니다.") 
 
     ## Process chat messages in parallel for efficiency
-    with ProcessPoolExecutor() as executor:
+    with ThreadPoolExecutor() as executor:
         futures = []
         for _, row in df.iterrows():
             user = row.iloc[0]  # 첫 번째 열: 사용자 이름
@@ -95,7 +109,7 @@ def extract_chat_data(df):
             time = row.iloc[2]  # 세 번째 열: 시간
             message = ' '.join(map(str, row[3:])).strip()  # 메시지 내용
 
-            # 형식 확인
+            # 형식 확인 
             if not (user.startswith('[') and user.endswith(']')):
                 continue
             if not (am_pm.startswith('[') and time.endswith(']')):
@@ -116,7 +130,7 @@ def extract_chat_data(df):
             ## 채팅 메시지 전처리
     
             # 반복되는 문자 정제
-            message = emoticon_normalize(message, num_repeats=2)
+            message = re.sub(r'(.)\1+', r'\1\1', message) 
 
             # 맞춤법 검사
             message = spell_checker.check(message)
@@ -127,8 +141,16 @@ def extract_chat_data(df):
             message = spacing(message)
 
             futures.append(executor.submit(process_message, message, word_score_table, stop_words))
+            
+            # 사용자별 채팅 데이터 저장
+            if user not in chat_data:
+                chat_data[user] = []
+            chat_data[user].append([formatted_time, message])
+            # 채팅 로그 순서대로 데이터 저장
+            log_data.append([user, formatted_time, message])
 
         # Wait for all futures to complete and collect results
+        print(futures)
         for future in futures:
             words = future.result()
             print(words)
@@ -138,10 +160,6 @@ def extract_chat_data(df):
     for word in all_word:
         # 사용자별로 단어 저장
         user_words[user].append(word)
-
-        # 채팅 로그 순서대로 데이터 저장
-        log_data.append([user, formatted_time, message])
-
 
         # ## 메시지에서 명사 추출 및 분석
 
@@ -234,7 +252,7 @@ def calculate_response_time_score(chat_data, log_data, name):
     for user in chat_data.keys():
         # 평균 응답 시간 계산
         if response_times[user]:  # 응답 시간이 존재할 경우
-            avg_response_times[user] = sum(response_times[user]) / len(response_times[user])
+            avg_response_times[user] = sum(response_times[user]) / len(response_times[user])    
         else:  # 응답 시간이 없을 경우 0으로 설정
             avg_response_times[user] = 0
     
@@ -243,9 +261,10 @@ def calculate_response_time_score(chat_data, log_data, name):
     return response_time_score
 
 
+app = Flask(__name__, template_folder='.')
+
 @app.route('/', methods=['GET', 'POST'])
 def home():
-
     if request.method == 'GET':
         return render_template("index.html")
     elif request.method == 'POST':
@@ -263,22 +282,20 @@ def home():
         df = process_file(file)
         (chat_data, log_data) = extract_chat_data(df)
 
-        if name not in chat_data:
-            return f"'{name}'라는 사용자의 데이터를 찾을 수 없습니다."
-
         user_chats = chat_data[name]
         sentiment_results = analyze_sentiment_korean(user_chats)
         time_slot = main_chat_time_by_user(user_chats)
 
         # 대화량 점수
         length_score = calculate_length_score(chat_data, name)
-
+        print(f'length_score : {length_score}')
+        
         # 답장 속도 점수
         response_time_score = calculate_response_time_score(chat_data, log_data, name)
+        print(f'response_time_score : {response_time_score}')
         
         # 결과를 result.html 템플릿으로 전달
         return render_template("result.html", sentiment_results=sentiment_results, time_slot=time_slot, length_score=length_score, response_time_score=response_time_score)
 
 if __name__ == '__main__':
     app.run(debug=True)
-
