@@ -41,7 +41,11 @@
                 <canvas id="myBarChart"></canvas>
             </div>
             <div>
-                <!-- <canvas id="myChart"></canvas> -->
+                <h3>대화량 비율</h3>
+                <canvas id="chatVolumeChart"></canvas>
+            </div>
+            <div>
+                <canvas id="myChart"></canvas>
             </div>
             </pre>
             
@@ -78,50 +82,133 @@
         for (let i = 0; i < 24; i++) {
             labels.push(i + '시');
         }
-        const myBarChart = new Chart(document.getElementById('myBarChart'), {
-            type: 'bar',    
+    
+        const myLineChart = new Chart(document.getElementById('myBarChart'), {
+            type: 'line', // 선 그래프
             data: {
                 labels: labels,
                 datasets: [
                     {
                         label: '{{user1_name}}',
                         data: {{user1_time_slots}},
-                        backgroundColor: 'rgba(75, 192, 192, 0.2)', // 사용자 1의 색상
-                        borderColor: 'rgba(75, 192, 192, 1)', // 사용자 1의 경계선 색상
-                        borderWidth: 1
+                        borderColor: 'rgba(75, 192, 192, 1)', // 사용자 1의 선 색상
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)', // 선 아래 채움 색상
+                        fill: true, // 선 아래를 채울지 여부
+                        tension: 0.3 // 선의 부드러움 정도
                     },
                     {
                         label: '{{user2_name}}',
                         data: {{user2_time_slots}},
-                        backgroundColor: 'rgba(153, 102, 255, 0.2)', // 사용자 2의 색상
-                        borderColor: 'rgba(153, 102, 255, 1)', // 사용자 2의 경계선 색상
-                        borderWidth: 1
+                        borderColor: 'rgba(153, 102, 255, 1)', // 사용자 2의 선 색상
+                        backgroundColor: 'rgba(153, 102, 255, 0.2)', // 선 아래 채움 색상
+                        fill: true, // 선 아래를 채울지 여부
+                        tension: 0.3 // 선의 부드러움 정도
                     }
                 ]
             },
             options: {
+                responsive: true, // 반응형
                 scales: {
                     y: {
-                        beginAtZero: true
+                        beginAtZero: true // Y축 0부터 시작
                     }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top', // 범례 위치
+                    },
                 }
             }
         });
     </script>
 
+<script>
+    // 데이터 비율
+    const user1Ratio = {{ user1_ratio | round(3) }};
+    const user2Ratio = {{ user2_ratio | round(3) }};
+    const total = user1Ratio + user2Ratio;
+
+    // 퍼센트 계산
+    const user1Percentage = ((user1Ratio / total) * 100).toFixed(1);
+    const user2Percentage = ((user2Ratio / total) * 100).toFixed(1);
+
+    // 파이 차트 생성
+    const chatVolumePieChart = new Chart(document.getElementById('chatVolumeChart'), {
+        type: 'pie',
+        data: {
+            labels: ['{{ user1_name }}', '{{ user2_name }}'],
+            datasets: [{
+                label: '대화량 비율',
+                data: [user1Ratio, user2Ratio],
+                backgroundColor: ['rgba(75, 192, 192, 0.7)', 'rgba(153, 102, 255, 0.7)'],
+                borderColor: ['rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: true // 범례 숨김
+                },
+                tooltip: {
+                    enabled: false // 툴팁 숨김
+                }
+            }
+        },
+        plugins: [{
+            id: 'center-text',
+            beforeDraw: (chart) => {
+                const ctx = chart.ctx;
+                const width = chart.width;
+                const height = chart.height;
+                const radius = chart.innerRadius + (chart.outerRadius - chart.innerRadius) / 2;
+
+                ctx.save();
+                const fontSize = width / 10
+                ctx.font = `${fontSize}px Arial`; // 글씨 크기 조정
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                // 텍스트 배경을 위한 그라디언트 추가 (글자가 잘 보이도록)
+                const gradient = ctx.createLinearGradient(0, 0, width, height);
+                gradient.addColorStop(0, 'rgba(0, 0, 0, 0.6)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.6)');
+
+                // 오른쪽 (user1) 중심 텍스트
+                const x1 = width *(3/4)
+                const y1 = height / 2
+                ctx.fillStyle = gradient; // 배경 그라디언트 색상 적용
+                ctx.fillText(`${user1Percentage}%`, x1, y1);
+
+                // 왼쪽 (user2) 중심 텍스트
+                const x2 = width * (1/4)
+                const y2 = height / 2 
+                ctx.fillStyle = gradient; // 배경 그라디언트 색상 적용
+                ctx.fillText(`${user2Percentage}%`, x2, y2);
+
+                ctx.restore();
+            }
+        }]
+    });
+</script>
+
+
+
+
+
     <!-- 레이더 차트 데이터 -->
     <script>
         const data = {
         labels: [
-            '대화량',
-            '감정 분석',
             '답장 속도',
-            'empty',
-            'empty'
+            '대화량',
+            '감정표현',
+            '이모티콘'
         ],
         datasets: [{
             label: '대화 로그 분석',
-            data: [ {{length_score}}, 40, {{response_time_score}}, 50, 50],
+            data: [ {{user1_scores['speed_score']}}, {{user1_scores['length_score']}}, {{user1_scores['sentiment_score']}}, {{user1_scores['emoji_score']}}],
             fill: true,
             backgroundColor: 'rgba(255, 99, 132, 0.2)',
             borderColor: 'rgb(255, 99, 132)',
@@ -152,7 +239,7 @@
         };
 
         const myChart = new Chart(
-            // document.getElementById('myChart'),
+            document.getElementById('myChart'),
             config
         );
     </script>

@@ -1,265 +1,134 @@
 from flask import Flask, request, render_template
 import pandas as pd
-from datetime import datetime
-from collections import defaultdict
+import re, os, pickle
+from datetime import datetime, timedelta
+import emoji
 from pykospacing import Spacing
 from hanspell import spell_checker
-from konlpy.tag import Okt  
-from ckonlpy.tag import Twitter
 import urllib.request
 from soynlp import DoublespaceLineCorpus
 from soynlp.word import WordExtractor
-from soynlp.normalizer import *
 from soynlp.tokenizer import MaxScoreTokenizer
-from concurrent.futures import ThreadPoolExecutor  
-import re
-import os
-import pickle # 객체를 직렬화하여 저장
-twt = Okt()
+from konlpy.tag import Okt
+import matplotlib.pyplot as plt
 
+# 대화 로그에서 날짜를 추출하는 함수
+def extract_date_from_log(log_line):
+    match = re.match(r"[-]+ (\d{4}년 \d{1,2}월 \d{1,2}일) .+", log_line)
+    if match:
+        return match.group(1)
+    return None
 
-# 파일 처리 함수
-def process_file(file):
-    chunk_size = 1000  # 한 번에 읽을 줄 수
-    chunk_list = []  # 모든 청크를 저장할 리스트
-
-    for chunk in pd.read_csv(file, chunksize=chunk_size, encoding='utf-8', delimiter='\t'):
-        # 각 청크 처리 (여기서 chunk는 pandas DataFrame)
-        # 예를 들어, 각 청크를 전처리하는 로직을 여기에 추가
-        processed_chunk = process_chunk(chunk)
+# 데이터를 정리하여 DataFrame으로 변환
+def parse_message(logs):
+    messages = []
+    today = datetime.now()
+    thirty_days_ago = today - timedelta(days=30)
+    current_date = None
+    
+    for log in logs:
+        # 날짜 정보가 포함된 로그가 있을 때
+        date = extract_date_from_log(log)
+        if date:
+            current_date = datetime.strptime(date, "%Y년 %m월 %d일")
         
-        # 처리된 청크를 리스트에 추가
-        chunk_list.append(processed_chunk)
-
-    # 모든 청크가 처리된 후 합치기
-    df = pd.concat(chunk_list, ignore_index=True)
-    return df
-
-# 청크 처리 함수
-def process_chunk(chunk):
-    # 각 청크에서 필요한 전처리 작업을 수행
-    # 예를 들어, 공백을 기준으로 분할하는 등의 작업
-    data = []
-    for _, row in chunk.iterrows():
-        fields = row.iloc[0].split()  # 공백 기준 분할
-        data.append(fields)
-
-    # DataFrame으로 변환 후 반환
-    max_fields = max(len(fields) for fields in data)
-    for fields in data:
-        fields.extend([''] * (max_fields - len(fields)))
+        # 날짜가 최근 30일 내에 있을 때만 처리
+        if current_date and current_date >= thirty_days_ago:
+            # 대화 로그에서 시간과 메시지를 추출
+            match = re.match(r"\[(.+?)\] \[(.+?)\] (.+)", log)
+            if match:
+                user, time, text = match.groups()
+                messages.append({"user": user, "time": time, "text": text, "date": current_date})
     
-    return pd.DataFrame(data)
+    return pd.DataFrame(messages)
 
-def process_message(message, word_score_table, stop_words):
-    
-    scores = {word: score.cohesion_forward for word, score in word_score_table.items()}
-    maxscore_tokenizer = MaxScoreTokenizer(scores=scores)
-    
-    # 메시지 토큰화 및 명사 추출
-    tokenized_message = maxscore_tokenizer.tokenize(message)
-    words = []
-    for tokens in tokenized_message:    
-        tokens = twt.pos(tokens)
-        for word, j in tokens:
-            if j=='Noun' and len(word) > 1 and word not in stop_words:  # 1글자 제외, 불용어 제외
-                words.append(word)
-    print("Processed words:", words)
-    return words
+# 시간대별 대화량을 계산
+def main_chat_time_by_user(df):
+    time_slots = {user: [0] * 24 for user in df['user'].unique()}
 
-# 사용자별 채팅 데이터 분리 함수    
-def extract_chat_data(df):
-    from collections import defaultdict
-    
-    chat_data = {}
-    log_data = []
+    for _, row in df.iterrows():
+        time = row['time']
+        user = row['user']
 
-    user_words = defaultdict(list)  # 사용자별 단어 저장
-    user_sentiments = defaultdict(lambda: {'positive': 0, 'negative': 0})  # 긍정/부정 단어 빈도 저장
-
-    all_word = []
-    stop_words = set(['그리고', '이것', '그것', '저것','이거','그거','저거','이제', '혹시', '이번', '저번',
-                '보통', '먼저', '오늘', '내일', '어제', '오전', '오후', '잠깐', '일찍', '정도', '이제', '다시', '바로', '대신', '거의', '어디'])
-    positive_words = ['좋다', '훌륭', '기쁘다', '멋지다', '사랑', '행복']  # 추가 가능
-    negative_words = ['나쁘다', '싫다', '짜증', '슬프다', '화난다', '불행']  # 추가 가능
-
-    urllib.request.urlretrieve("https://raw.githubusercontent.com/lovit/soynlp/master/tutorials/2016-10-20.txt", filename="2016-10-20.txt")
-    corpus = DoublespaceLineCorpus("2016-10-20.txt")
-
-    # 훈련된 모델이 있는지 확인하고, 있으면 로드하고 없으면 새로 훈련
-    if os.path.exists('word_score_table.pkl'):
-        with open('word_score_table.pkl', 'rb') as f:
-            word_score_table = pickle.load(f)
-        print("훈련된 결과를 불러왔습니다.")
-    else:
-        print("훈련된 결과가 없어서 새로 훈련을 시작합니다.")
-        word_extractor = WordExtractor()
-        word_extractor.train(corpus)
-        word_score_table = word_extractor.extract()
-        with open('word_score_table.pkl', 'wb') as f:
-            pickle.dump(word_score_table, f)
-        print("훈련이 완료되었습니다.") 
-
-    ## Process chat messages in parallel for efficiency
-    with ThreadPoolExecutor() as executor:
-        futures = []
-        for _, row in df.iterrows():
-            user = row.iloc[0]  # 첫 번째 열: 사용자 이름
-            am_pm = row.iloc[1]  # 두 번째 열: 오전/오후
-            time = row.iloc[2]  # 세 번째 열: 시간
-            message = ' '.join(map(str, row[3:])).strip()  # 메시지 내용
-
-            # 형식 확인 
-            if not (user.startswith('[') and user.endswith(']')):
-                continue
-            if not (am_pm.startswith('[') and time.endswith(']')):
-                continue
-
-            user = user[1:-1]
-            am_pm = am_pm[1:]
-            time = time[:-1]
-
-            # 시간 변환
-            hour, minute = map(int, time.split(':'))
-            if am_pm == '오후':
-                hour = (hour % 12) + 12
-            elif hour == 12:
-                hour = 0
-            formatted_time = f"{hour:02}:{minute:02}"
-
-            ## 채팅 메시지 전처리
-    
-            # 반복되는 문자 정제
-            message = re.sub(r'(.)\1+', r'\1\1', message) 
-
-            # 맞춤법 검사
-            message = spell_checker.check(message)
-            message = message.checked
-
-            # 띄어쓰기 검사
-            spacing = Spacing()
-            message = spacing(message)
-
-            futures.append(executor.submit(process_message, message, word_score_table, stop_words))
-            
-            # 사용자별 채팅 데이터 저장
-            if user not in chat_data:
-                chat_data[user] = []
-            chat_data[user].append([formatted_time, message])
-            # 채팅 로그 순서대로 데이터 저장
-            log_data.append([user, formatted_time, message])
-
-        # Wait for all futures to complete and collect results
-        print(futures)
-        for future in futures:
-            words = future.result()
-            print(words)
-            all_word.extend(words)
-
-    # 사용자별 단어 리스트 생성
-    for word in all_word:
-        # 사용자별로 단어 저장
-        user_words[user].append(word)
-
-        # ## 메시지에서 명사 추출 및 분석
-
-        # # 학습에 기반한 단어 토큰화
-        # tokenized_message = maxscore_tokenizer.tokenize(message)
-        # for words in tokenized_message:
-        #     print(words)
-        #     word = twt.pos(words)    
-        #     for i, j in word:
-        #         if j == 'Noun' and len(i) > 1: # and i not in stop_words:  # 1글자 제외, 불용어 제외
-        #             all_word.append(i)
-        #             user_words[user].append(i)
-
-    # 모든 단어의 빈도 데이터프레임 생성
-    all_word_df = pd.DataFrame({'words': all_word, 'count': len(all_word) * [1]})
-    all_word_df = all_word_df.groupby('words').count()
-    print(all_word_df.sort_values('count', ascending=False))
-
-    # # 사용자별 긍정/부정 점수 출력
-    # print("\nUser Sentiment Scores:")
-    # for user, sentiments in user_sentiments.items():
-    #     print(f"{user}: {sentiments}")
-
-    # 사용자별 단어 리스트 확인
-    #print("\nUser-specific Words:")
-    #for user, words in user_words.items():
-    #    print(f"{user}: {words}")
-
-    return chat_data, log_data
-
-
-# 감정 분석 함수
-def analyze_sentiment_korean(chats):
-    results = []
-    
-    return results
-
-# 시간대별 대화량 분석
-def main_chat_time_by_user(chats):
-    time_slot = [0] * 24
-    for chat in chats:
-        time = chat[0]
-        hour, _ = map(int, time.split(':'))
-        time_slot[hour] += 1
-    return time_slot
-
-def calculate_length_score(chat_data, name):
-    for user in chat_data:
-            if(user==name):
-                target_len = len(chat_data[user])
-            else:
-                other_len = len(chat_data[user])
-    print(target_len)
-    print(other_len)
-    ratio = target_len / other_len
-    if ratio <= 0.5:
-        return 0
-    elif ratio >= 2:
-        return 100
-    elif 1 <= ratio < 2:
-        return round(80 + 20 * (ratio - 1))  # 1~2 사이 선형 증가
-    else:  # 0.5 < ratio < 1
-        return round(80 - 80 * (1 - ratio))  # 0.5~1 사이 선형 감소
-
-def calculate_response_time_score(chat_data, log_data, name):
-    response_times = defaultdict(list)  # 사용자별 응답 시간 저장
-    avg_response_times = {}  # 사용자별 평균 응답 시간 저장
-    
-    for idx in range(len(log_data)):
-        if(not idx):
-            time_prev = datetime.strptime(log_data[0][1], "%H:%M")
-            continue
-
-        user_prev =log_data[idx-1][0]
-        user = log_data[idx][0]
-        time_str_prev = log_data[idx-1][1]
-        time_str = log_data[idx][1]
-
-        if(user == user_prev):
-            continue
+        # 오전/오후 구분을 위해 시간 문자열 처리
+        time_parts = time.split(' ')
+        period = time_parts[0]  # '오전' 또는 '오후'
+        hour = int(time_parts[1].split(':')[0])  # 시각만 추출 (오전/오후 구분이 된 시간)
         
-        time_prev = datetime.strptime(time_str_prev, "%H:%M")  # 이전 메시지 시간
-        time_curr = datetime.strptime(time_str, "%H:%M")  # 현재 메시지 시간 
-        time_delta = (time_curr - time_prev).total_seconds() / 60  # 시간 차이를 분으로 변환
+        # 오전/오후에 따른 시간 계산
+        if period == 'PM' and hour != 12:
+            hour += 12
+        elif period == 'AM' and hour == 12:
+            hour = 0  # 오전 12시는 0시로 처리
 
-        if time_delta < 0 or time_delta > 300:  # 비정상 시간 데이터 제거
-            continue
-        response_times[user].append(time_delta)
+        # 각 유저별로 해당 시간대의 대화량 증가
+        time_slots[user][hour] += 1
 
-    for user in chat_data.keys():
-        # 평균 응답 시간 계산
-        if response_times[user]:  # 응답 시간이 존재할 경우
-            avg_response_times[user] = sum(response_times[user]) / len(response_times[user])    
-        else:  # 응답 시간이 없을 경우 0으로 설정
-            avg_response_times[user] = 0
+    return time_slots
+
+# 시간 차이 계산 함수
+def calculate_time_differences(df):
+    df["time"] = df["time"].str.replace("오전", "AM").str.replace("오후", "PM")
+    df["time_diff"] = (
+        pd.to_datetime(df["time"], format="%p %I:%M", errors="coerce")
+        .diff()
+        .dt.total_seconds() / 60
+    )
+    df["time_diff"] = df["time_diff"].apply(lambda x: x if 0 <= x < 180 else None)
+    df["user_diff"] = df["user"].shift() != df["user"]
+    df["time_diff"] = df["time_diff"].where(df["user_diff"])
     
-    response_time_score = round(max(0, 100 - (abs(avg_response_times[user] - 0) / 60) * 100))
+    # 유저별 평균 답장 시간 계산
+    avg_time_per_user = df.groupby('user')['time_diff'].mean().reset_index(name='avg_time_diff')
 
-    return response_time_score
+    return df, avg_time_per_user 
 
+# 점수 계산 함수 정의
+def calculate_scores_by_user(df):
+    # 1. 답장 속도 평균 (5점 만점)
+    avg_time_per_user = df.groupby('user')['time_diff'].mean()
+    avg_time_scores = avg_time_per_user.apply(
+        lambda x: 5 if x <= 30 else 4 if x <= 60 else 3 if x <= 120 else 2 if x <= 300 else 1
+    )
+
+    # 2. 메시지 길이 평균 × 채팅 개수 (5점 만점)
+    message_volume_per_user = df.groupby('user')['text'].apply(lambda texts: texts.str.len().mean() * len(texts))
+    message_volume_scores = message_volume_per_user.apply(
+        lambda x: 5 if x > 5000 else 4 if x > 3000 else 3 if x > 1500 else 2 if x > 500 else 1
+    )
+    total_volume = message_volume_per_user.sum()
+    volume_ratios = (message_volume_per_user / total_volume).tolist()       
+
+
+    # 3. 감정 점수: "ㅋㅋ" 또는 "ㅎㅎ"가 포함된 메시지 개수 / 전체 메시지 개수
+    df['has_laughter'] = df['text'].apply(lambda text: "ㅋㅋ" in text or "ㅎㅎ" in text)
+    laughter_ratio = df.groupby('user')['has_laughter'].mean()
+    laughter_scores = laughter_ratio.apply(
+        lambda x: 5 if x > 0.7 else 4 if x > 0.5 else 3 if x > 0.3 else 2 if x > 0.1 else 1
+    )
+
+    # 4. 이모지 사용 점수: 이모지가 포함된 메시지 개수 / 전체 메시지 개수
+    df['has_emoji'] = df['text'].apply(lambda text: any(emoji.is_emoji(char) for char in text) or text.strip() == "이모티콘")
+    emoji_ratio = df.groupby('user')['has_emoji'].mean()
+    emoji_scores = emoji_ratio.apply(
+        lambda x: 5 if x > 0.7 else 4 if x > 0.5 else 3 if x > 0.3 else 2 if x > 0.1 else 1
+    )
+
+    print(f"avg_time_per_user : {avg_time_per_user}")
+    print(f"avg_length_per_user : {message_volume_per_user}")
+    print(f"laughter_ratio : {laughter_ratio}")
+    print(f"emoji_ratio : {emoji_ratio}")
+
+    # 유저별 최종 평균 점수 DataFrame 생성
+    scores_per_user = pd.DataFrame({
+        'speed_score': avg_time_scores,
+        'length_score': message_volume_scores,
+        'sentiment_score': laughter_scores,
+        'emoji_score': emoji_scores
+    })
+
+    return scores_per_user, volume_ratios
+    
 
 app = Flask(__name__, template_folder='.')
 
@@ -270,32 +139,49 @@ def home():
     elif request.method == 'POST':
         if 'file' not in request.files:
             return "파일이 업로드되지 않았습니다."
-        if 'name' not in request.values:
-            return "이름이 입력되지 않았습니다."
 
         file = request.files['file']
-        name = request.values['name']
+        file_lines = file.read().decode('utf-8').splitlines()
 
-        if file.filename == '':
-            return "선택된 파일이 없습니다."
-
-        df = process_file(file)
-        (chat_data, log_data) = extract_chat_data(df)
-
-        user_chats = chat_data[name]
-        sentiment_results = analyze_sentiment_korean(user_chats)
-        time_slot = main_chat_time_by_user(user_chats)
-
-        # 대화량 점수
-        length_score = calculate_length_score(chat_data, name)
-        print(f'length_score : {length_score}')
+        df = parse_message(file_lines)
         
-        # 답장 속도 점수
-        response_time_score = calculate_response_time_score(chat_data, log_data, name)
-        print(f'response_time_score : {response_time_score}')
+        # 날짜별 대화량 계산
+        daily_chat_volume = df.groupby('date').size().reset_index(name='chat_count')
+
+        # 시간 차이 추가
+        df, avg_time_per_user = calculate_time_differences(df)
+
+        # 유저별 점수 계산
+        scores_per_user, volume_ratios = calculate_scores_by_user(df)
+
+        # 시간대별 대화량 분석
+        chat_time_by_user = main_chat_time_by_user(df)
         
-        # 결과를 result.html 템플릿으로 전달
-        return render_template("result.html", sentiment_results=sentiment_results, time_slot=time_slot, length_score=length_score, response_time_score=response_time_score)
+
+        user1_name = df["user"].unique()[0]
+        user2_name = df["user"].unique()[1]
+        user1_scores = scores_per_user.loc[user1_name].to_dict()
+        user2_scores = scores_per_user.loc[user2_name].to_dict()
+        
+        daily_chat_volume_date = daily_chat_volume['date'].dt.strftime('%Y-%m-%d').tolist()
+        daily_chat_volume_count = daily_chat_volume['chat_count'].tolist()
+            
+
+        # 각 유저의 시간대별 대화량을 배열로 변환
+        user1_time_slots = chat_time_by_user.get(user1_name, [0]*24)
+        user2_time_slots = chat_time_by_user.get(user2_name, [0]*24)
+        return render_template('result.html',
+                               user1_name=user1_name,
+                               user2_name=user2_name, 
+                               user1_time_slots=user1_time_slots,
+                               user2_time_slots=user2_time_slots,
+                               daily_chat_volume_date=daily_chat_volume_date,
+                               daily_chat_volume_count=daily_chat_volume_count, 
+                                user1_scores=user1_scores,
+                                user2_scores=user2_scores,
+                                user1_ratio=volume_ratios[0],
+                                user2_ratio=volume_ratios[1],
+                               )
 
 if __name__ == '__main__':
     app.run(debug=True)
