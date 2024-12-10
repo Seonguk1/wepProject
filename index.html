@@ -3,35 +3,122 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>대화 로그 분석기</title>
+  <title>애정도 테스트</title>
+  <script>
+    function validateForm() {
+        const fileInput = document.getElementById("file");
+        if (!fileInput.value) {
+            alert("파일을 업로드해주세요.");
+            return false; // 폼 전송 방지
+        }
+        return true; // 폼 전송 허용
+    }
+</script>
+  <style>
+    /* 전체 배경 및 기본 스타일 */
+    body {
+      margin: 0;
+      font-family: 'Roboto', Arial, sans-serif;
+      background: linear-gradient(135deg, #f5d8f0, #d5e1ff);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
 
-  <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
-  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-  
+    .container {
+      text-align: center;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0px 10px 20px rgba(0, 0, 0, 0.2);
+      width: 90%;
+      max-width: 500px;
+    }
+
+    /* 제목 스타일 */
+    h1 {
+      font-size: 36px;
+      color: #6a5acd;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+
+    /* 소제목 스타일 */
+    h2 {
+      font-size: 18px;
+      color: #555;
+      margin-bottom: 30px;
+    }
+
+    /* 파일 업로드 버튼 스타일 */
+    .custom-file-upload {
+      display: inline-block;
+      padding: 12px 30px;
+      font-size: 16px;
+      color: white;
+      background: #6a5acd;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      margin-bottom: 20px;
+    }
+
+    .custom-file-upload:hover {
+      background: #5847aa;
+    }
+
+    /* 숨긴 파일 업로드 입력 필드 */
+    #file-upload {
+      display: none;
+    }
+
+    /* 시작하기 버튼 스타일 */
+    .start-button {
+      padding: 12px 30px;
+      font-size: 16px;
+      color: white;
+      background: #ff6f61;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-decoration: none;
+    }
+
+    .start-button:hover {
+      background: #e05b4e;
+    }
+
+    /* 반응형 디자인 */
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 28px;
+      }
+      h2 {
+        font-size: 16px;
+      }
+      .custom-file-upload, .start-button {
+        font-size: 14px;
+        padding: 10px 20px;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="container">
-    <h1>대화 로그 분석기</h1>
+    <h1>애정도 테스트</h1>
+    <h2>채팅으로 알아보는 우리의 애정도 점수는?</h2>
 
-    <form action="/" method="post" enctype="multipart/form-data">
-      <input name="name" placeholder="테스트할 사용자 이름"><br><br>
+    <form action="/" method="post" enctype="multipart/form-data" onsubmit="return validateForm();">
       <label for="file-upload" class="custom-file-upload">
-          대화 로그 파일 업로드
-      </label>
-
+        대화 로그 파일 업로드
+      </label>  
       <input id="file-upload" name="file" type="file" accept=".txt">
-      <button type="submit">업로드</button>
+      <br>
+      <button type="submit" class="start-button">시작하기</button>
     </form>
-  
-    <div class="file-info" id="file-info"></div>
   </div>
-
-  <!-- <script>
-    document.querySelectorAll("input")[1].addEventListener("click",()=>{
-      window.addEventListener('load', function(){
-        document.body.innerHTML = "loading..."
-      })
-    })
-  </script> -->
 </body>
 </html>

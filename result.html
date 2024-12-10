@@ -3,52 +3,173 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>대화 로그 분석기</title>
-
+    <title>애정도 테스트 결과</title>
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+    
+    <style>
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5d8f0, #d5e1ff);
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        h1, h2 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #444;
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        h2 {
+            font-size: 20px;
+            color: #555;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .chart-container {
+            margin: 40px 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 30px;
+        }
+        .chart {
+            flex: 1 1 45%; /* 반응형으로 너비 설정 */
+            min-width: 300px; /* 최소 너비 */
+            max-width: 600px; /* 최대 너비 */
+        }
+        table {
+            width: 100%;
+            margin: 40px 0;
+            border-collapse: separate;
+            border-spacing: 0 10px;
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        thead {
+            background-color: #6a5acd; /* 보라색 */
+            color: white;
+            text-transform: uppercase;
+            font-size: 14px;
+            letter-spacing: 0.05em;
+        }
+        th, td {
+            padding: 15px 20px;
+            text-align: center;
+        }
+        th:first-child, td:first-child {
+            text-align: left;
+        }
+        tbody tr {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        tbody tr:hover {
+            background-color: #f0f3ff;
+            transform: scale(1.01);
+            transition: all 0.2s ease-in-out;
+        }
+        td {
+            font-size: 14px;
+            color: #555;
+        }
+        td:first-child {
+            font-weight: bold;
+            color: #333;
+        }
+        .button-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+        button {
+            padding: 12px 30px;
+            font-size: 16px;
+            color: white;
+            background: #6a5acd;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background: #5847aa;
+        }
+        /* 반응형 디자인 */
+        @media (max-width: 768px) {
+            table {
+                width: 100%;
+            }
+            th, td {
+                font-size: 12px;
+                padding: 10px 15px;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <h1>대화 로그 분석기</h1><br>
-        <div class="results">
-            <h2>분석 결과</h2>
-            <button type="submit" onclick="totalNumSpoken()">총 말한 횟수</button>
-            <button type="submit" onclick="NumWordSpoken()">특정 단어 말한 횟수</button>
-            <pre>분석 결과가 여기에 표시됩니다.
-                
-                    <!-- {% for chat in chat_data %}
-                        
-                            <strong>사용자:</strong> {{ chat[0] }} <br>
-                            <strong>시간:</strong> {{ chat[1] }} {{ chat[2] }} <br>
-                            <strong>메시지:</strong> {{ chat[3] }}
-                        
-                    {% endfor %} -->
+        <h1>애정도 테스트 결과</h1>
+        <h2>우리의 대화 데이터를 바탕으로 분석한 결과입니다!</h2>
 
-
-                    
-                
-            
-            <!-- <div id="resultDisplay">
-                
-            </div> -->
-            <div>
+        <!-- 차트 영역 -->
+        <div class="chart-container">
+            <div class="chart">
                 <canvas id="dailyChart"></canvas>
             </div>
-            <div>
+            <div class="chart">
                 <canvas id="myBarChart"></canvas>
             </div>
-            <div>
-                <h3>대화량 비율</h3>
+            <div class="chart">
                 <canvas id="chatVolumeChart"></canvas>
             </div>
-            <div>
+            <div class="chart">
                 <canvas id="myChart"></canvas>
             </div>
-            </pre>
-            
+        </div>
+
+        <!-- 데이터 테이블 -->
+        <table>
+            <thead>
+                <tr>
+                    <th>유저</th>
+                    <th>답장 속도</th>
+                    <th>콘텐츠 공유</th>
+                    <th>감정표현</th>
+                    <th>이모티콘</th>
+                    <th>애정표현</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user, data in analyze_per_user.items() %}
+                <tr>
+                    <td>{{ user }}</td>
+                    <td>{{ data['avg_time_per_user']|round(2) }}분</td>
+                    <td>{{ data['content_share_count'] }}개</td>
+                    <td>{{ data['laughter_ratio'] }}개</td>
+                    <td>{{ data['emoji_count'] }}개</td>
+                    <td>{{ data['affection_count'] }}개</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- 버튼 -->
+        <div class="button-container">
+            <button onclick="location.href='/final_score'">최종 점수 확인하기</button>
         </div>
     </div>
 
@@ -149,12 +270,17 @@
             responsive: true,
             plugins: {
                 legend: {
-                    display: true // 범례 숨김
+                    position: 'top', // legend 위치를 차트 상단으로 설정
+                    labels: {
+                        font: {
+                            size: 14 // 레전드 글자 크기 조정
+                        }
+                    }
                 },
                 tooltip: {
                     enabled: false // 툴팁 숨김
                 }
-            }
+            },
         },
         plugins: [{
             id: 'center-text',
@@ -202,13 +328,14 @@
         const data = {
         labels: [
             '답장 속도',
-            '대화량',
+            '콘텐츠 공유',
             '감정표현',
-            '이모티콘'
+            '이모티콘',
+            '애정표현'
         ],
         datasets: [{
-            label: '대화 로그 분석',
-            data: [ {{user1_scores['speed_score']}}, {{user1_scores['length_score']}}, {{user1_scores['sentiment_score']}}, {{user1_scores['emoji_score']}}],
+            label: '{{ user1_name }}',
+            data: [ {{user1_scores['speed_score']}}, {{user1_scores["content_share_score"]}}, {{user1_scores['sentiment_score']}}, {{user1_scores['emoji_score']}}, {{user1_scores['affection_score']}}],
             fill: true,
             backgroundColor: 'rgba(255, 99, 132, 0.2)',
             borderColor: 'rgb(255, 99, 132)',
@@ -216,6 +343,17 @@
             pointBorderColor: '#fff',
             pointHoverBackgroundColor: '#fff',
             pointHoverBorderColor: 'rgb(255, 99, 132)'
+        },
+        {
+            label: '{{ user2_name }}',
+            data: [ {{ user2_scores['speed_score']}}, {{user2_scores["content_share_score"]}}, {{user2_scores['sentiment_score']}}, {{user2_scores['emoji_score']}}, {{user2_scores['affection_score']}}],
+            fill: true,
+            backgroundColor: 'rgba(54, 162, 235, 0.2)', // user2 색상
+            borderColor: 'rgb(54, 162, 235)',
+            pointBackgroundColor: 'rgb(54, 162, 235)',
+            pointBorderColor: '#fff',
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: 'rgb(54, 162, 235)'
         }]
         };
 
@@ -224,6 +362,17 @@
         type: 'radar',
         data: data,
         options: {
+            scales: {
+                r: {
+                    suggestedMin: 0,  // 최소값 0으로 설정
+                    suggestedMax: 100, // 최대값 100으로 설정
+                    ticks: {
+                        stepSize: 20, // 20점 단위로 설정
+                        display: true,  // 값 표시 여부
+                        beginAtZero: true // 0에서 시작
+                    }
+                }
+            },
             legend:{
                 label: {
                     fontColor: "red",
@@ -243,5 +392,6 @@
             config
         );
     </script>
+
 </body>
 </html>

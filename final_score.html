@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>최종 점수</title>
+    <style>
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #f5d8f0, #d5e1ff);
+        }
+        .score-container {
+            text-align: center;
+        }
+        .score {
+            font-size: 72px;
+            font-weight: bold;
+            color: #6a5acd;
+        }
+        .description {
+            font-size: 24px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="score-container">
+        <div class="description">당신의 최종 애정도 점수는....</div><br>
+        <div class="score" id="score">0</div>
+    </div>
+
+    <script>
+        // 최종 점수를 Python에서 받아온 값으로 설정
+        const finalScore = {{ score }};
+
+        // 애니메이션 효과로 점수 증가
+        let currentScore = 0;
+        const interval = 30; // 점수 업데이트 간격(ms)
+        const step = finalScore / 100; // 점수 증가량 (100단계로 나눔)
+
+        const scoreElement = document.getElementById('score');
+        const incrementScore = () => {
+            if (currentScore < finalScore) {
+                currentScore += step;
+                scoreElement.textContent = Math.floor(currentScore); // 소수점 제거
+                requestAnimationFrame(incrementScore); // 애니메이션 프레임 요청
+            } else {
+                scoreElement.textContent = finalScore; // 정확한 최종 점수 설정
+            }
+        };
+        incrementScore();
+    </script>
+</body>
+</html>

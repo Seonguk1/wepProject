@@ -1,16 +1,8 @@
 from flask import Flask, request, render_template
 import pandas as pd
-import re, os, pickle
+import re
 from datetime import datetime, timedelta
 import emoji
-from pykospacing import Spacing
-from hanspell import spell_checker
-import urllib.request
-from soynlp import DoublespaceLineCorpus
-from soynlp.word import WordExtractor
-from soynlp.tokenizer import MaxScoreTokenizer
-from konlpy.tag import Okt
-import matplotlib.pyplot as plt
 
 # 대화 로그에서 날짜를 추출하는 함수
 def extract_date_from_log(log_line):
@@ -39,7 +31,7 @@ def parse_message(logs):
             if match:
                 user, time, text = match.groups()
                 messages.append({"user": user, "time": time, "text": text, "date": current_date})
-    
+
     return pd.DataFrame(messages)
 
 # 시간대별 대화량을 계산
@@ -78,56 +70,83 @@ def calculate_time_differences(df):
     df["user_diff"] = df["user"].shift() != df["user"]
     df["time_diff"] = df["time_diff"].where(df["user_diff"])
     
-    # 유저별 평균 답장 시간 계산
-    avg_time_per_user = df.groupby('user')['time_diff'].mean().reset_index(name='avg_time_diff')
+    return df 
 
-    return df, avg_time_per_user 
+def calculate_message_volume_by_user(df):
+    # 메시지 길이 평균 × 채팅 개수
+    message_volume_per_user = df.groupby('user')['text'].apply(lambda texts: texts.str.len().mean() * len(texts))
+    total_volume = message_volume_per_user.sum()
+    volume_ratios = (message_volume_per_user / total_volume).tolist() 
+
+    return volume_ratios
 
 # 점수 계산 함수 정의
 def calculate_scores_by_user(df):
-    # 1. 답장 속도 평균 (5점 만점)
+    # 1. 답장 속도 점수: 답장 평균 시간이 20분 이상이면 0점으로 기준
     avg_time_per_user = df.groupby('user')['time_diff'].mean()
     avg_time_scores = avg_time_per_user.apply(
-        lambda x: 5 if x <= 30 else 4 if x <= 60 else 3 if x <= 120 else 2 if x <= 300 else 1
+        lambda x: min(max(100 - x*5,0),100)
+    )      
+
+    # 2. 콘텐츠 공유 점수: 콘텐츠(사진, 동영상, 파일)를 하루에 2번 이상 보내는 것을 100점으로 기준
+    df['has_content_share'] = df['text'].isin(['사진', '동영상']) | df['text'].str.startswith('파일: ')
+    content_share_count = df.groupby('user')['has_content_share'].sum()
+    content_share_scores = content_share_count.apply(
+        lambda x: min(x*5/3,100)
     )
 
-    # 2. 메시지 길이 평균 × 채팅 개수 (5점 만점)
-    message_volume_per_user = df.groupby('user')['text'].apply(lambda texts: texts.str.len().mean() * len(texts))
-    message_volume_scores = message_volume_per_user.apply(
-        lambda x: 5 if x > 5000 else 4 if x > 3000 else 3 if x > 1500 else 2 if x > 500 else 1
-    )
-    total_volume = message_volume_per_user.sum()
-    volume_ratios = (message_volume_per_user / total_volume).tolist()       
 
-
-    # 3. 감정 점수: "ㅋㅋ" 또는 "ㅎㅎ"가 포함된 메시지 개수 / 전체 메시지 개수
+    # 3. 감정 점수: "ㅋㅋ" 또는 "ㅎㅎ"가 포함된 메시지를 하루에 10번 이상 보내는 것을 100점으로 기준
     df['has_laughter'] = df['text'].apply(lambda text: "ㅋㅋ" in text or "ㅎㅎ" in text)
-    laughter_ratio = df.groupby('user')['has_laughter'].mean()
+    laughter_ratio = df.groupby('user')['has_laughter'].sum()
     laughter_scores = laughter_ratio.apply(
-        lambda x: 5 if x > 0.7 else 4 if x > 0.5 else 3 if x > 0.3 else 2 if x > 0.1 else 1
+        lambda x: min(x / 3, 100)
     )
 
-    # 4. 이모지 사용 점수: 이모지가 포함된 메시지 개수 / 전체 메시지 개수
+    # 4. 이모지 사용 점수: 이모티콘이 포함된 메시지를 하루에 5번 이상 보내는 것을 100점으로 기준
     df['has_emoji'] = df['text'].apply(lambda text: any(emoji.is_emoji(char) for char in text) or text.strip() == "이모티콘")
-    emoji_ratio = df.groupby('user')['has_emoji'].mean()
-    emoji_scores = emoji_ratio.apply(
-        lambda x: 5 if x > 0.7 else 4 if x > 0.5 else 3 if x > 0.3 else 2 if x > 0.1 else 1
+    emoji_count = df.groupby('user')['has_emoji'].sum()
+    emoji_scores = emoji_count.apply(
+        lambda x: min(x*2/3, 100)
     )
 
-    print(f"avg_time_per_user : {avg_time_per_user}")
-    print(f"avg_length_per_user : {message_volume_per_user}")
-    print(f"laughter_ratio : {laughter_ratio}")
-    print(f"emoji_ratio : {emoji_ratio}")
+    # 5. 애정도 점수: '사랑'이 포함된 메시지를 하루에 1번 이상 보내는 것을 100점으로 기준
+    affection_keywords = ['사랑']
+    def calculate_affection_score(text):
+        return sum(keyword in text for keyword in affection_keywords)
 
-    # 유저별 최종 평균 점수 DataFrame 생성
-    scores_per_user = pd.DataFrame({
-        'speed_score': avg_time_scores,
-        'length_score': message_volume_scores,
-        'sentiment_score': laughter_scores,
-        'emoji_score': emoji_scores
+    df['has_affection'] = df['text'].apply(calculate_affection_score)
+    affection_count = df.groupby('user')['has_affection'].sum()
+    affection_scores = affection_count.apply(
+        lambda x: min(x*10/3,100)
+    )
+
+    print(f"avg_time_per_user : {avg_time_scores}")
+    print(f"content_share : {content_share_scores}")
+    print(f"laughter_ratio : {laughter_scores}")
+    print(f"emoji_ratio : {emoji_scores}")
+    print(f"affection_ratio : {affection_scores}")
+
+    analyze_per_user = pd.DataFrame({
+        'avg_time_per_user': avg_time_per_user,
+        'content_share_count': content_share_count,
+        'laughter_ratio': laughter_ratio,
+        'emoji_count': emoji_count,
+        'affection_count': affection_count
     })
 
-    return scores_per_user, volume_ratios
+    scores_per_user = pd.DataFrame({
+        'speed_score': avg_time_scores,
+        'content_share_score' : content_share_scores,
+        'sentiment_score': laughter_scores,
+        'emoji_score': emoji_scores,
+        'affection_score': affection_scores,
+    })
+
+    # 최종 점수 계산 (각 점수의 평균)
+    scores_per_user['final_score'] = scores_per_user.mean(axis=1)
+
+    return analyze_per_user, scores_per_user
     
 
 app = Flask(__name__, template_folder='.')
@@ -138,21 +157,33 @@ def home():
         return render_template("index.html")
     elif request.method == 'POST':
         if 'file' not in request.files:
-            return "파일이 업로드되지 않았습니다."
+            # 파일이 업로드되지 않았을 경우 alert 메시지 반환
+            return jsonify({"error": "파일을 업로드해주세요."}), 400
+
+        file = request.files['file']
+        if not file.filename:
+            # 파일이 선택되지 않았을 경우 alert 메시지 반환
+            return jsonify({"error": "파일을 업로드해주세요."}), 400
 
         file = request.files['file']
         file_lines = file.read().decode('utf-8').splitlines()
 
         df = parse_message(file_lines)
+        unique_users = df["user"].unique()
+        if len(unique_users) > 2:
+            allowed_users = unique_users[:2]  # 첫 2명의 유저만 유지
+            df = df[df["user"].isin(allowed_users)]
         
         # 날짜별 대화량 계산
         daily_chat_volume = df.groupby('date').size().reset_index(name='chat_count')
 
         # 시간 차이 추가
-        df, avg_time_per_user = calculate_time_differences(df)
+        df = calculate_time_differences(df)
 
         # 유저별 점수 계산
-        scores_per_user, volume_ratios = calculate_scores_by_user(df)
+        analyze_per_user, scores_per_user = calculate_scores_by_user(df)
+
+        volume_ratios = calculate_message_volume_by_user(df)
 
         # 시간대별 대화량 분석
         chat_time_by_user = main_chat_time_by_user(df)
@@ -160,6 +191,7 @@ def home():
 
         user1_name = df["user"].unique()[0]
         user2_name = df["user"].unique()[1]
+        analyze_per_user_json = analyze_per_user.to_dict(orient="index")
         user1_scores = scores_per_user.loc[user1_name].to_dict()
         user2_scores = scores_per_user.loc[user2_name].to_dict()
         
@@ -177,11 +209,16 @@ def home():
                                user2_time_slots=user2_time_slots,
                                daily_chat_volume_date=daily_chat_volume_date,
                                daily_chat_volume_count=daily_chat_volume_count, 
+                               analyze_per_user = analyze_per_user_json,
                                 user1_scores=user1_scores,
                                 user2_scores=user2_scores,
                                 user1_ratio=volume_ratios[0],
                                 user2_ratio=volume_ratios[1],
                                )
+@app.route('/final_score')
+def final_score():
+    final_score = 85  # 최종 점수, 예시로 85점 설정
+    return render_template('final_score.html', score=final_score)
 
 if __name__ == '__main__':
     app.run(debug=True)
